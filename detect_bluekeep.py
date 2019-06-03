@@ -99,13 +99,30 @@ def rdp_connect(sock):
     ip, port = sock.getpeername()
     log.debug(f"[D] [{ip}] Verifying RDP protocol...")
 
-    try:
-        res = rdp_send_recv(sock, pdu_connection_request())
-    except Exception as ex:
-        log.debug(f"[D] [{ip}] rdp_connect: {ex}")
-        return False
+    res = rdp_send_recv(sock, pdu_connection_request())
+    # 0300 0013 0e d0 0000 1234 00
+    # 03 - response type x03 TYPE_RDP_NEG_FAILURE x02 TYPE_RDP_NEG_RSP
+    # 00 0800 05000000
+    if res[0:2] == b'\x03\x00' and (res[5] & 0xf0) == 0xd0:
+        if res[0xb] == 0x2:
+            log.debug(f"[D] [{ip}] RDP connection accepted by the server.")
+            return True
+        elif res[0xb] == 0x3:
+            log.debug(f"[D] [{ip}] RDP connection rejected by the server.")
+            proto = res[0xf]
+            prs = []
+            if proto & 0x1:
+                prs.append("PROTOCOL_SSL")
+            if proto & 0x2:
+                prs.append("PROTOCOL_HYBRID")
+            if proto & 0x4:
+                prs.append("PROTOCOL_RDSTLS")
+            if proto & 0x8:
+                prs.append("PROTOCOL_HYBRID_EX")
+            log.debug(f"[D] [{ip}] RDP server demands protocols: {', '.join(prs)}")
 
-    return True
+            return False
+    raise RdpCommunicationError()
 
 
 def pdu_connect_initial():
@@ -595,8 +612,11 @@ def try_check(sock, rc4enckey, hmackey, rc4deckey):
 def check_rdp_vuln(sock):
     ip, port = sock.getpeername()
     # check if rdp is open
-    if not rdp_connect(sock):
-        log.debug(f"[D] [{ip}] Could not connect to RDP.")
+    try:
+        if not rdp_connect(sock):
+            return STATUS_UNKNOWN
+    except Exception as ex:
+        log.debug(f"[D] [{ip}] Exception occured during RDP connect: {ex}")
         return STATUS_NORDP
 
     # send initial client data
@@ -702,6 +722,7 @@ def check_host(ip, port=3389):
         try:
             s.connect((ip, port))
         except Exception as ex:
+            log.debug(f"[D] [{ip}] Exception occured during TCP connect: {ex}")
             status = STATUS_NORDP
         else:
             try:
