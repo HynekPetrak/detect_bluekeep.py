@@ -30,7 +30,7 @@ optional arguments:
 
 ## Running
 
-You may run with a list of IPv addresses or hostnames:
+You may run with a list of IPv4 addresses or hostnames:
 
 ```
 # ./detect_bluekeep.py 192.168.158.241 192.168.158.242 192.168.158.247 192.168.162.73 192.168.162.70
