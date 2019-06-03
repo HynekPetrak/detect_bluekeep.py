@@ -49,3 +49,7 @@ or for whole subnets:
 ```
 # ./detect_bluekeep.py 192.168.158.241/24 192.168.162.70/28
 ```
+
+## License
+
+Apache 2.0
