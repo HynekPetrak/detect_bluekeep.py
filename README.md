@@ -9,6 +9,8 @@ RC4 taken from https://github.com/DavidBuchanan314/rc4
 Added:
 - some RDP PDU annotations
 - decryption of the server traffic.
+- properly packetized server to client traffic
+- other enhancements 
 
 ## Commandline parameters
 
