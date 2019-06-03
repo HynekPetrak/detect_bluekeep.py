@@ -12,6 +12,9 @@ Added:
 - properly packetized server to client traffic
 - other enhancements 
 
+## TODO
+- implement TLS layer
+
 ## Commandline parameters
 
 ```
