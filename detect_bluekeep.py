@@ -17,10 +17,18 @@ from ipaddress import IPv4Network
 
 log = logging.getLogger("bluekeep")
 
-STATUS_VULNERABLE = "Vulnerable"
-STATUS_UNKNOWN = "Unknown"
-STATUS_NORDP = "No RDP"
-STATUS_SAFE = "Safe"
+STATUS_VULNERABLE = "VULNERABLE"
+STATUS_UNKNOWN = "UNKNOWN"
+STATUS_NORDP = "NO RDP"
+STATUS_SAFE = "SAFE"
+
+NEGOTIATION_FAILURED = ["UNKNOWN_ERROR",
+    "SSL_REQUIRED_BY_SERVER", # 1
+    "SSL_NOT_ALLOWED_BY_SERVER",
+    "SSL_CERT_NOT_ON_SERVER",
+    "INCONSISTENT_FLAGS",
+    "HYBRID_REQUIRED_BY_SERVER", # 5
+    "SSL_WITH_USER_AUTH_REQUIRED_BY_SERVER"] # 6
 
 # https://github.com/DavidBuchanan314/rc4
 class RC4:
@@ -106,22 +114,15 @@ def rdp_connect(sock):
     if res[0:2] == b'\x03\x00' and (res[5] & 0xf0) == 0xd0:
         if res[0xb] == 0x2:
             log.debug(f"[D] [{ip}] RDP connection accepted by the server.")
-            return True
+            return None
         elif res[0xb] == 0x3:
             log.debug(f"[D] [{ip}] RDP connection rejected by the server.")
-            proto = res[0xf]
-            prs = []
-            if proto & 0x1:
-                prs.append("PROTOCOL_SSL")
-            if proto & 0x2:
-                prs.append("PROTOCOL_HYBRID")
-            if proto & 0x4:
-                prs.append("PROTOCOL_RDSTLS")
-            if proto & 0x8:
-                prs.append("PROTOCOL_HYBRID_EX")
-            log.debug(f"[D] [{ip}] RDP server demands protocols: {', '.join(prs)}")
-
-            return False
+            fc = res[0xf]
+            if fc > 6:
+                fc = 0
+            fcs = NEGOTIATION_FAILURED[fc]
+            log.debug(f"[D] [{ip}] filureCode: {fcs}")
+            return fcs
     raise RdpCommunicationError()
 
 
@@ -613,8 +614,9 @@ def check_rdp_vuln(sock):
     ip, port = sock.getpeername()
     # check if rdp is open
     try:
-        if not rdp_connect(sock):
-            return STATUS_UNKNOWN
+        status = rdp_connect(sock)
+        if status:
+            return status
     except Exception as ex:
         log.debug(f"[D] [{ip}] Exception occured during RDP connect: {ex}")
         return STATUS_NORDP
