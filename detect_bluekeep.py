@@ -18,6 +18,8 @@ from ipaddress import IPv4Network
 
 log = logging.getLogger("bluekeep")
 
+VERSION = "0.7"
+
 SEC_ENCRYPT = 0x08
 SEC_INFO_PKT = 0x40
 
@@ -118,8 +120,9 @@ def rdp_connect(sock, use_ssl):
     # 0300 0013 0e d0 0000 1234 00
     # 03 - response type x03 TYPE_RDP_NEG_FAILURE x02 TYPE_RDP_NEG_RSP
     # 00 0800 05000000
+    # Issue #2: 0300 000b 06 d0 0000 1234 00
     if res[0:2] == b'\x03\x00' and (res[5] & 0xf0) == 0xd0:
-        if res[0xb] == 0x2:
+        if len(res) < 0xc or res[0xb] == 0x2:
             log.debug(f"[D] [{ip}] RDP connection accepted by the server.")
             return None
         elif res[0xb] == 0x3:
@@ -943,7 +946,7 @@ def configure_logging(enable_debug, logfile):
     ch.setFormatter(formatter)
     log.addHandler(ch)
 
-    log.info("Starting %s" % __file__)
+    log.info(f"Starting {os.path.basename(__file__)} {VERSION}")
     log.info(" ".join(sys.argv))
     #abspath = os.path.abspath(__file__)
     #dname = os.path.dirname(abspath)
@@ -952,7 +955,7 @@ def configure_logging(enable_debug, logfile):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--version', action='version', version=f'{os.path.basename(__file__)} 0.6')
+    parser.add_argument('--version', action='version', version=f'{os.path.basename(__file__)} {VERSION}')
     parser.add_argument('-d', '--debug', action='store_true', help='verbose output')
     parser.add_argument('--notls', action='store_false', help='disable TLS security')
     parser.add_argument('-l', '--logfile', nargs="?", help='log to file')
