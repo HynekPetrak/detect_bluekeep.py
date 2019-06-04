@@ -1,5 +1,5 @@
 # detect_bluekeep.py
-Python script to detect bluekeep vulnerability - CVE-2019-0708
+Python script to detect bluekeep vulnerability - CVE-2019-0708 - with TLS/SSL support
 
 Work derived from the Metasploit module written by [@zerosum0x0](https://twitter.com/zerosum0x0)
 https://github.com/zerosum0x0/CVE-2019-0708
