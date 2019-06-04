@@ -11,6 +11,7 @@ RC4 taken from https://github.com/DavidBuchanan314/rc4
 - __SAFE__ - host appears to be not vulnerable
 - __VULNERABLE__ - host is likely vunerable to CVE-2019-0708
 - __HYBRID_REQUIRED_BY_SERVER__ - server requires CredSSP, which is currently not supported by detect_bluekeep.py
+- __NO RDP__ - RDP not enabled on the remote host on port 3389
 - __UNKNOWN__ - status is reported only in very rare cases (less than 5%). It ususally comes on protocol timeouts. Some other PoCs report __UNKNOWN__ status even when server enforces SSL/TLS, we don't.
 
 ## Changelog
