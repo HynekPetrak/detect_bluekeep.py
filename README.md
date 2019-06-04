@@ -6,15 +6,14 @@ https://github.com/zerosum0x0/CVE-2019-0708
 
 RC4 taken from https://github.com/DavidBuchanan314/rc4
 
-Added:
-- some RDP PDU annotations
-- decryption of the server traffic.
-- properly packetized server to client traffic
-- other enhancements 
-
 ## Added in version 0.5 - 4.5.2019
 
 The scripts now supports SSL/TLS security, which is enabled by default. If you want to use the standard RDP security, use the --notls commandline parameter.
+
+## Added in version 0.1 - 3.5.2019
+- some RDP PDU annotations
+- decryption of the server traffic.
+- properly packetized server to client traffic, including fast path traffic
 
 ## Commandline parameters
 
