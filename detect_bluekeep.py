@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import ssl
 import argparse
 import sys
 import traceback
@@ -16,6 +17,9 @@ from binascii import unhexlify, hexlify
 from ipaddress import IPv4Network
 
 log = logging.getLogger("bluekeep")
+
+SEC_ENCRYPT = 0x08
+SEC_INFO_PKT = 0x40
 
 STATUS_VULNERABLE = "VULNERABLE"
 STATUS_UNKNOWN = "UNKNOWN"
@@ -80,7 +84,7 @@ class RC4:
 
 # https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/db6713ee-1c0e-4064-a3b3-0fac30b4037b
 
-def pdu_connection_request():
+def pdu_connection_request(use_ssl = True):
     pkt = (
         b"\x03\x00" + # TPKT header
         b"\x00\x2b" + # TPKT leangth
@@ -97,17 +101,20 @@ def pdu_connection_request():
         b"\x0d\x0a" +
         b"\x01" + # RDP_NEG_REQ
         b"\x00" + # flags
-        b"\x08" + # length
-        b"\x00\x00\x00\x00\x00" # PROTOCOL_RDP - standard security
+        b"\x08" # length
     )
+    if not use_ssl:
+        pkt += b"\x00\x00\x00\x00\x00" # PROTOCOL_RDP - standard security
+    else:
+        pkt += b"\x00\x01\x00\x00\x00" # PROTOCOL_SSL - TLS security
     return pkt
 
 
-def rdp_connect(sock):
+def rdp_connect(sock, use_ssl):
     ip, port = sock.getpeername()
     log.debug(f"[D] [{ip}] Verifying RDP protocol...")
 
-    res = rdp_send_recv(sock, pdu_connection_request())
+    res = rdp_send_recv(sock, pdu_connection_request(use_ssl))
     # 0300 0013 0e d0 0000 1234 00
     # 03 - response type x03 TYPE_RDP_NEG_FAILURE x02 TYPE_RDP_NEG_RSP
     # 00 0800 05000000
@@ -126,7 +133,7 @@ def rdp_connect(sock):
     raise RdpCommunicationError()
 
 
-def pdu_connect_initial():
+def pdu_connect_initial(use_ssl):
     pkt = (
         #000102030405060708090A0B0C0D0E0F000102030405060708090A0B0C0D0E0F
         "0300" +
@@ -193,8 +200,12 @@ def pdu_connect_initial():
         "0000000000000000000000000000000000000000000000000000000000000000" +
         "0000000000000000000000000000000000000000000000000000000000000000" +
         "00" +
-        "00" +
-        "00000000" +
+        "00")
+    if use_ssl:
+        pkt += "01000000" # Server selected protocol
+    else:
+        pkt += "00000000" # Server selected protocol
+    pkt += (
         "04c00c00" + # CS_CLUSTER
         "09000000" + # CLUSTER flags
         "00000000" +
@@ -296,19 +307,53 @@ def pdu_security_exchange(rcran, rsexp, rsmod, bitlen):
 # https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/772d618e-b7d6-4cd0-b735-fa08af558f9d
 def pdu_client_info():
     pkt = (
-        "000000003301000000000a000000000000000000" +
-        "75007300650072003000" + # FIXME: username
-        "000000000000000002001c00" +
-        "3100390032002e003100360038002e0031002e00320030003800" + # FIXME: ip
         #000102030405060708090A0B0C0D0E0F000102030405060708090A0B0C0D0E0F
-        "00003c0043003a005c00570049004e004e0054005c0053007900730074006500" +
-        "6d00330032005c006d007300740073006300610078002e0064006c006c000000" +
-        "a40100004700540042002c0020006e006f0072006d0061006c00740069006400" +
-        "0000000000000000000000000000000000000000000000000000000000000000" +
-        "0000000000000a00000005000300000000000000000000004700540042002c00" +
-        "200073006f006d006d0061007200740069006400000000000000000000000000" +
-        "0000000000000000000000000000000000000000000000000000030000000500" +
-        "0200000000000000c4ffffff00000000270000000000")
+        "00000000" + # CodePage
+        "33010000" + # flags INFO_ENABLEWINDOWSKEY 0x100 | INFO_MOUSE 0x1 | INFO_DISABLECTRLALTDEL 0x2 |
+                     # INFO_UNICODE 0x10 | INFO_MAXIMIZESHELL 0x20
+        "0000" + # cbDomain
+        "0a00" + # cbUserName
+        "0000" + # cbPassword
+        "0000" + # cbAlternateShell
+        "0000" + # cbWorkingDir
+        "0000" + # Domain
+        "750073006500720030000000" + # UserName
+        "0000" + # Password
+        "0000" + # AlternateShell
+        "0000" + # WorkingDir
+        "0200" + # clientAddressFamily = AF_INET (2)
+        "1c00" + # cbClientAddress = 0x1c = 28 bytes
+        "3100390032002e003100360038002e0031002e003200300038000000" + # clientAddress
+        "3c00" + # cbClientDir
+        "43003a005c00570049004e004e0054005c00530079007300740065006d003300" +
+        "32005c006d007300740073006300610078002e0064006c006c000000" + # clientDir
+        "a4010000" + # TIME_ZONE_INFORMATION::Bias
+        "4700540042002c0020006e006f0072006d0061006c0074006900640000000000" +
+        "0000000000000000000000000000000000000000000000000000000000000000" + # TIME_ZONE_INFORMATION::StandardName
+        "0000" + # wYear
+        "0a00" + # wMonth
+        "0000" + # wDayOfWeek
+        "0500" + # wDay
+        "0300" + # wHour
+        "0000" + # wMinute
+        "0000" + # wSecond
+        "0000" + # wMiliseconds
+        "00000000" + # TIME_ZONE_INFORMATION::StandardBias
+        "4700540042002c00200073006f006d006d006100720074006900640000000000" +
+        "0000000000000000000000000000000000000000000000000000000000000000" + # DaylightName
+        "0000" + # wYear ...
+        "0300" +
+        "0000" +
+        "0500" +
+        "0200" +
+        "0000" +
+        "0000" +
+        "0000" + # wMiliseconds
+        "c4ffffff" + # TIME_ZONE_INFORMATION::DaylightBias
+        "00000000" + # clientSessionId
+        "27000000" + # performanceFlags
+        "0000" # cbAutoReconnectCookie
+    )
     return unhexlify(pkt)
 
 
@@ -420,7 +465,9 @@ def rdp_parse_serverdata(pkt, ip):
     ptr = 0
     rdp_pkt = pkt[0x49:]  # ..pkt.length]
 
+    log.debug(f"[D] [{ip}] {ptr}  <  {len(rdp_pkt)}")
     while ptr < len(rdp_pkt):
+        log.debug(f"[D] [{ip}] {ptr}  <  {len(rdp_pkt)}")
         header_type = rdp_pkt[ptr:ptr+1+1]
         header_length = struct.unpack("<H", rdp_pkt[ptr+2:ptr+3+1])[0]
 
@@ -505,9 +552,16 @@ def rdp_send_recv(sock, data):
     return rdp_recv(sock)
 
 
-def rdp_encrypted_pkt(data, rc4enckey, hmackey, flags=b"\x08\x00",
-                      flagsHi=b"\x00\x00", channelId=b"\x03\xeb"):
-    userData_len = len(data) + 12
+def rdp_encrypted_pkt(data, rc4enckey = None, hmackey = None, flags = 0,
+                      flagsHi=0, channelId=b"\x03\xeb"):
+    add_security_header = (flags & SEC_INFO_PKT) or hmackey
+    add_security_header1 = hmackey
+
+    userData_len = len(data)
+    if add_security_header:
+        userData_len += 4
+    if add_security_header1:
+        userData_len += 8
     udl_with_flag = 0x8000 | userData_len
 
     pkt = b"\x02\xf0\x80"  # X.224
@@ -515,12 +569,13 @@ def rdp_encrypted_pkt(data, rc4enckey, hmackey, flags=b"\x08\x00",
     pkt += b"\x00\x08"  # intiator userId .. TODO: for a functional client this isn't static
     pkt += channelId  # channelId = 1003
     pkt += b"\x70"  # dataPriority
-    # pkt += "\x80" # TODO: half of this is length field ......
     pkt += struct.pack(">H", udl_with_flag)
-    pkt += flags  # {}"\x48\x00" # flags  SEC_INFO_PKT | SEC_ENCRYPT
-    pkt += flagsHi  # flagsHi
-    pkt += rdp_hmac(hmackey, data)[0:7+1]
-    pkt += rdp_rc4_crypt(rc4enckey, data)
+    if add_security_header:
+        pkt += struct.pack("<H", flags)  # {}"\x48\x00" # flags  SEC_INFO_PKT | SEC_ENCRYPT
+        pkt += struct.pack("<H", flagsHi)  # flagsHi
+    if add_security_header1:
+        pkt += rdp_hmac(hmackey, data)[0:7+1]
+    pkt += rdp_rc4_crypt(rc4enckey, data) if rc4enckey else data
 
     tpkt = b"\x03\x00"
     tpkt += struct.pack(">H", len(pkt) + 4)
@@ -536,6 +591,8 @@ def rdp_decrypt_pkt(data, rc4deckey, ip):
     # 0300000902f0802180
     # 80b6fb733472f22b32a14d898a37aabd58913d001aa82451bd261
     # 808323c0c394f83989eec894d7493a2577048f16e23564d084cfd
+    if not rc4deckey:
+        return
     f = 0
     if data[0:2] == b'\x03\x00':
         t = data[0x07]
@@ -570,7 +627,7 @@ def rdp_decrypt_pkt(data, rc4deckey, ip):
         #    sys.exit(0)
 
 
-def try_check(sock, rc4enckey, hmackey, rc4deckey):
+def try_check(sock, rc4enckey, hmackey, rc4deckey, encrypt_flag):
     ip, port = sock.getpeername()
     try:
         for i in range(5):
@@ -586,14 +643,14 @@ def try_check(sock, rc4enckey, hmackey, rc4deckey):
         # x86
         pkt = rdp_encrypted_pkt(
             unhexlify("100000000300000000000000020000000000000000000000"),
-            rc4enckey, hmackey, b"\x08\x00", b"\x00\x00", b"\x03\xed")
+            rc4enckey, hmackey, encrypt_flag, 0, b"\x03\xed")
         rdp_send(sock, pkt)
         log.debug(f"Sending challange x64 .. {j}")
         # x64
         pkt = rdp_encrypted_pkt(
             unhexlify(
                 "20000000030000000000000000000000020000000000000000000000000000000000000000000000"),
-            rc4enckey, hmackey, b"\x08\x00", b"\x00\x00", b"\x03\xed")
+            rc4enckey, hmackey, encrypt_flag, 0, b"\x03\xed")
         rdp_send(sock, pkt)
 
         try:
@@ -610,21 +667,34 @@ def try_check(sock, rc4enckey, hmackey, rc4deckey):
     return STATUS_SAFE
 
 
-def check_rdp_vuln(sock):
+def check_rdp_vuln(sock, use_ssl = True):
     ip, port = sock.getpeername()
     # check if rdp is open
     try:
-        status = rdp_connect(sock)
+        status = rdp_connect(sock, use_ssl)
         if status:
             return status
     except Exception as ex:
         log.debug(f"[D] [{ip}] Exception occured during RDP connect: {ex}")
         return STATUS_NORDP
 
+    if use_ssl:
+        log.debug(f"[D] [{ip}] Starting TLS")
+
+        #context = ssl.
+        sock = ssl.wrap_socket(sock, ssl_version=ssl.PROTOCOL_TLSv1,
+                                       cert_reqs=ssl.CERT_NONE,)
+        encrypt_flag = 0
+        log.debug(f"[D] [{ip}] Security enabled: {sock.version()}")
+    else:
+        encrypt_flag = SEC_ENCRYPT
+
     # send initial client data
     log.debug(f"[D] [{ip}] Sending initial client data")
-    res = rdp_send_recv(sock, pdu_connect_initial())
-    rsmod, rsexp, rsran, server_rand, bitlen = rdp_parse_serverdata(res, ip)
+    res = rdp_send_recv(sock, pdu_connect_initial(use_ssl))
+
+    if encrypt_flag:
+        rsmod, rsexp, rsran, server_rand, bitlen = rdp_parse_serverdata(res, ip)
 
     # erect domain and attach user
     log.debug(f"[D] [{ip}] Sending erect domain request")
@@ -645,27 +715,32 @@ def check_rdp_vuln(sock):
     rdp_send_recv(sock, pdu_channel_request(user1, 1008))
 
     #client_rand = "\xff\xee\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff"
-    client_rand = b"\x41" * 32
-    rcran = int.from_bytes(client_rand, "little")
+    if encrypt_flag:
+        client_rand = b"\x41" * 32
+        rcran = int.from_bytes(client_rand, "little")
 
-    log.debug(f"[D] [{ip}] Sending security exchange PDU")
-    rdp_send(sock, pdu_security_exchange(rcran, rsexp, rsmod, bitlen))
+        log.debug(f"[D] [{ip}] Sending security exchange PDU")
+        rdp_send(sock, pdu_security_exchange(rcran, rsexp, rsmod, bitlen))
 
-    log.debug(f"[D] [{ip}] Calculating keys")
-    rc4encstart, rc4decstart, hmackey, sessblob = rdp_calculate_rc4_keys(
-        client_rand, server_rand)
+        log.debug(f"[D] [{ip}] Calculating keys")
+        rc4encstart, rc4decstart, hmackey, sessblob = rdp_calculate_rc4_keys(
+            client_rand, server_rand)
 
-    log.debug(f"[D] [{ip}] RC4_ENC_KEY: #{hexlify(rc4encstart)}")
-    log.debug(f"[D] [{ip}] RC4_DEC_KEY: #{hexlify(rc4decstart)}")
-    log.debug(f"[D] [{ip}] HMAC_KEY: #{hexlify(hmackey)}")
-    log.debug(f"[D] [{ip}] SESS_BLOB: #{hexlify(sessblob)}")
+        log.debug(f"[D] [{ip}] RC4_ENC_KEY: #{hexlify(rc4encstart)}")
+        log.debug(f"[D] [{ip}] RC4_DEC_KEY: #{hexlify(rc4decstart)}")
+        log.debug(f"[D] [{ip}] HMAC_KEY: #{hexlify(hmackey)}")
+        log.debug(f"[D] [{ip}] SESS_BLOB: #{hexlify(sessblob)}")
 
-    rc4enckey = RC4(rc4encstart)
-    rc4deckey = RC4(rc4decstart)
+        rc4enckey = RC4(rc4encstart)
+        rc4deckey = RC4(rc4decstart)
+    else:
+        rc4enckey = None
+        rc4deckey = None
+        hmackey = None
 
-    log.debug(f"[D] [{ip}] Sending encrypted client info PDU")
+    log.debug(f"[D] [{ip}] Sending client info PDU")
     res = rdp_send_recv(sock, rdp_encrypted_pkt(
-        pdu_client_info(), rc4enckey, hmackey, b"\x48\x00"))
+        pdu_client_info(), rc4enckey, hmackey, SEC_INFO_PKT | encrypt_flag ))
 
     log.debug(f"[D] [{ip}] Received License packet: #{hexlify(res)}")
     rdp_decrypt_pkt(res, rc4deckey, ip)
@@ -676,27 +751,27 @@ def check_rdp_vuln(sock):
 
     log.debug(f"[D] [{ip}] Sending client confirm active PDU")
     rdp_send(sock, rdp_encrypted_pkt(
-        pdu_client_confirm_active(), rc4enckey, hmackey, b"\x38\x00"))
+        pdu_client_confirm_active(), rc4enckey, hmackey, 0x30 | encrypt_flag))
 
     log.debug(f"[D] [{ip}] Sending client synchronize PDU")
     log.debug(f"[D] [{ip}] Sending client control cooperate PDU")
     synch = rdp_encrypted_pkt(
-        unhexlify("16001700f103ea030100000108001f0000000100ea03"), rc4enckey, hmackey)
+        unhexlify("16001700f103ea030100000108001f0000000100ea03"), rc4enckey, hmackey, encrypt_flag)
     coop = rdp_encrypted_pkt(
-        unhexlify("1a001700f103ea03010000010c00140000000400000000000000"), rc4enckey, hmackey)
+        unhexlify("1a001700f103ea03010000010c00140000000400000000000000"), rc4enckey, hmackey, encrypt_flag)
     rdp_send(sock, synch + coop)
 
     log.debug(f"[D] [{ip}] Sending client control request control PDU")
     rdp_send(sock, rdp_encrypted_pkt(
-        unhexlify("1a001700f103ea03010000010c00140000000100000000000000"), rc4enckey, hmackey))
+        unhexlify("1a001700f103ea03010000010c00140000000100000000000000"), rc4enckey, hmackey, encrypt_flag))
 
     log.debug(f"[D] [{ip}] Sending client persistent key list PDU")
     rdp_send(sock, rdp_encrypted_pkt(
-        pdu_client_persistent_key_list(), rc4enckey, hmackey))
+        pdu_client_persistent_key_list(), rc4enckey, hmackey, encrypt_flag))
 
     log.debug(f"[D] [{ip}] Sending client font list PDU")
     rdp_send(sock, rdp_encrypted_pkt(
-        unhexlify("1a001700f103ea03010000010c00270000000000000003003200"), rc4enckey, hmackey))
+        unhexlify("1a001700f103ea03010000010c00270000000000000003003200"), rc4enckey, hmackey, encrypt_flag))
 
     #log.debug("Sending base PDU")
     #rdp_send(sock, rdp_encrypted_pkt(unhexlify("030000001d0002000308002004051001400a000c840000000000000000590d381001cc"), rc4enckey, hmackey))
@@ -704,7 +779,7 @@ def check_rdp_vuln(sock):
     #res = rdp_recv(sock)
     # vlog.debug_good("#{hexlify(res)}")
 
-    result = try_check(sock, rc4enckey, hmackey, rc4deckey)
+    result = try_check(sock, rc4enckey, hmackey, rc4deckey, encrypt_flag)
 
     if result == STATUS_VULNERABLE:
         # report_goods
@@ -714,7 +789,7 @@ def check_rdp_vuln(sock):
     return result
 
 
-def check_host(ip, port=3389):
+def check_host(ip, port=3389, use_ssl = True):
     status = STATUS_UNKNOWN
 
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -728,7 +803,7 @@ def check_host(ip, port=3389):
             status = STATUS_NORDP
         else:
             try:
-                status = check_rdp_vuln(s)
+                status = check_rdp_vuln(s, use_ssl)
             except Exception as ex:
                 raise ex
             finally:
@@ -868,8 +943,9 @@ def configure_logging(enable_debug, logfile):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--version', action='version', version=f'{os.path.basename(__file__)} 0.1')
+    parser.add_argument('--version', action='version', version=f'{os.path.basename(__file__)} 0.5')
     parser.add_argument('-d', '--debug', action='store_true', help='verbose output')
+    parser.add_argument('--notls', action='store_false', help='disable TLS security')
     parser.add_argument('-l', '--logfile', nargs="?", help='log to file')
     parser.add_argument('-w', '--workers', type=int, default=300, help='number of parallel worker tasks')
     parser.add_argument('host', nargs="*", help='List of targets (addresses or subnets)')
@@ -891,7 +967,7 @@ def main():
     # with progressbar.ProgressBar(max_value=len(ips)) as bar:
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.workers) as executor:
         for ip in ips:
-            ft_dp = executor.submit(check_host, ip)
+            ft_dp = executor.submit(check_host, ip, 3389, args.notls)
             th.append(ft_dp)
         for r in concurrent.futures.as_completed(th):
             ip, status = r.result()

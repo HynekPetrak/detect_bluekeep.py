@@ -12,14 +12,15 @@ Added:
 - properly packetized server to client traffic
 - other enhancements 
 
-## TODO
-- implement TLS layer
+## Added in version 0.5 - 4.5.2019
+
+The scripts now supports SSL/TLS security, which is enabled by default. If you want to use the standard RDP security, use the --notls commandline parameter.
 
 ## Commandline parameters
 
 ```
 # ./detect_bluekeep.py
-usage: detect_bluekeep.py [-h] [--version] [-d] [-l [LOGFILE]] [-w WORKERS]
+usage: detect_bluekeep.py [-h] [--version] [-d] [--notls] [-l [LOGFILE]] [-w WORKERS]
                           [host [host ...]]
 
 positional arguments:
@@ -29,6 +30,7 @@ optional arguments:
   -h, --help            show this help message and exit
   --version             show program's version number and exit
   -d, --debug           verbose output
+  --notls               disable TLS security
   -l [LOGFILE], --logfile [LOGFILE]
                         log to file
   -w WORKERS, --workers WORKERS
