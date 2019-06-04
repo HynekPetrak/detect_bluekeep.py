@@ -8,7 +8,7 @@ RC4 taken from https://github.com/DavidBuchanan314/rc4
 
 ## Added in version 0.5 - 4.5.2019
 
-The scripts now supports SSL/TLS security, which is enabled by default. If you want to use the standard RDP security, use the --notls commandline parameter.
+The scripts now __supports SSL/TLS security__, which is enabled by default. If you want to use the standard RDP security, use the --notls commandline parameter.
 
 ## Added in version 0.1 - 3.5.2019
 - some RDP PDU annotations
