@@ -609,7 +609,8 @@ def rdp_decrypt_pkt(data, rc4deckey, ip):
             h = data[s+4:s+4+8]
             enc_data = data[s+12:]
             log.debug(f"[D] [{ip}] Dec: len {l} flags 0x{f:04x} hash {hexlify(h)} actlen {len(enc_data)}")
-    elif data[0] == 0x80:
+    elif data[0] & 0x80: #fast-path traffic - FASTPATH_INPUT_ENCRYPTED is set
+        # TODO: handle FASTPATH_INPUT_SECURE_CHECKSUM
         if data[1] & 0x80:
             s = 11
         else:
@@ -617,8 +618,7 @@ def rdp_decrypt_pkt(data, rc4deckey, ip):
         enc_data = data[s:]
     else:
         return
-
-    if data[0] == 0x80 or (f & 0x0800):
+    if (data[0] & 0x80) or (f & 0x0800):
         dec_data = rdp_rc4_crypt(rc4deckey, enc_data)
         log.debug(f"[D] [{ip}] Cypher text lenght: {len(enc_data):04x}")
         log.debug(f"[D] [{ip}] Enc: {hexlify(enc_data[:40])}")
@@ -943,7 +943,7 @@ def configure_logging(enable_debug, logfile):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--version', action='version', version=f'{os.path.basename(__file__)} 0.5')
+    parser.add_argument('--version', action='version', version=f'{os.path.basename(__file__)} 0.6')
     parser.add_argument('-d', '--debug', action='store_true', help='verbose output')
     parser.add_argument('--notls', action='store_false', help='disable TLS security')
     parser.add_argument('-l', '--logfile', nargs="?", help='log to file')
