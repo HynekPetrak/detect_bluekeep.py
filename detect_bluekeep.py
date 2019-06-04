@@ -667,11 +667,24 @@ def try_check(sock, rc4enckey, hmackey, rc4deckey, encrypt_flag):
     return STATUS_SAFE
 
 
-def check_rdp_vuln(sock, use_ssl = True):
-    ip, port = sock.getpeername()
+def check_rdp_vuln(ip, port, use_ssl = True):
     # check if rdp is open
     try:
+        try:
+            sock = tcp_connect(ip, port)
+        except Exception as ex:
+            log.debug(f"[D] [{ip}] Exception occured during TCP connect: {ex}")
+            return STATUS_NORDP
         status = rdp_connect(sock, use_ssl)
+        if status == "SSL_NOT_ALLOWED_BY_SERVER":
+            use_ssl = False
+            try:
+                log.debug(f"[D] [{ip}] RDP reconnecting without SSL")
+                sock = tcp_connect(ip, port)
+            except Exception as ex:
+                log.debug(f"[D] [{ip}] Exception occured during TCP connect: {ex}")
+                return STATUS_NORDP
+            status = rdp_connect(sock, use_ssl)
         if status:
             return status
     except Exception as ex:
@@ -789,25 +802,21 @@ def check_rdp_vuln(sock, use_ssl = True):
     return result
 
 
-def check_host(ip, port=3389, use_ssl = True):
-    status = STATUS_UNKNOWN
-
+def tcp_connect(ip, port):
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.setsockopt(socket.SOL_TCP, socket.TCP_NODELAY, 1)
     s.settimeout(5.0)
+    s.connect((ip, port))
+    return s
+
+
+def check_host(ip, port=3389, use_ssl = True):
+    status = STATUS_UNKNOWN
     try:
         try:
-            s.connect((ip, port))
+            status = check_rdp_vuln(ip, port, use_ssl)
         except Exception as ex:
-            log.debug(f"[D] [{ip}] Exception occured during TCP connect: {ex}")
-            status = STATUS_NORDP
-        else:
-            try:
-                status = check_rdp_vuln(s, use_ssl)
-            except Exception as ex:
-                raise ex
-            finally:
-                s.close()
+            raise ex
     except Exception as ex:
         log.debug(f"[D] [{ip}] Exception: {ex}")
     return ip, status
