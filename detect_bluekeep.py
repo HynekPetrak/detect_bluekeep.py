@@ -18,7 +18,7 @@ from ipaddress import IPv4Network
 
 log = logging.getLogger("bluekeep")
 
-VERSION = "0.7"
+VERSION = "0.8"
 
 SEC_ENCRYPT = 0x08
 SEC_INFO_PKT = 0x40
