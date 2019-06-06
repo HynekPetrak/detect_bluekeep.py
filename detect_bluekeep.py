@@ -18,7 +18,7 @@ from ipaddress import IPv4Network
 
 log = logging.getLogger("bluekeep")
 
-VERSION = "0.8"
+VERSION = "0.9"
 
 SEC_ENCRYPT = 0x08
 SEC_INFO_PKT = 0x40
@@ -181,7 +181,9 @@ def pdu_connect_initial(use_ssl):
         "000500147c00018142000800100001c00044756361" +
         "8134" +
         "01c0d800" + #CS_CORE - length 0xd8
-        "04000800" +
+        "04000800" + # RDP 5.0, 5.1, 5.2, 6.0, 6.1, 7.0, 7.1, 8.0, and 8.1 clients
+        # When RDP 4.0 is used it does not trigger the vulnerability detection
+        #"01000800" + # RDP 4.0 clients
         "2003" +
         "5802" +
         "01ca" +
@@ -471,18 +473,29 @@ def rdp_parse_serverdata(pkt, ip):
     ptr = 0
     rdp_pkt = pkt[0x49:]  # ..pkt.length]
 
-    log.debug(f"[D] [{ip}] {ptr}  <  {len(rdp_pkt)}")
+    log.debug(f"[D] [{ip}] Parsing server data: {ptr}/{len(rdp_pkt)}")
     while ptr < len(rdp_pkt):
-        log.debug(f"[D] [{ip}] {ptr}  <  {len(rdp_pkt)}")
         header_type = rdp_pkt[ptr:ptr+1+1]
         header_length = struct.unpack("<H", rdp_pkt[ptr+2:ptr+3+1])[0]
 
-        log.debug(f"[D] [{ip}] header: #{hexlify(header_type)} len #{header_length}")
+        log.debug(f"[D] [{ip}] header: {hexlify(header_type)} len {header_length}")
 
         if header_type == b"\x02\x0c":
             log.debug(f"[D] [{ip}] security header")
+            encryptionMethod = struct.unpack("<L", rdp_pkt[ptr+4:ptr+8])[0]
+            encryptionLevel = struct.unpack("<L", rdp_pkt[ptr+8:ptr+12])[0]
+            serverRandomLen = struct.unpack("<L", rdp_pkt[ptr+12:ptr+16])[0]
+            serverCertLen = struct.unpack("<L", rdp_pkt[ptr+16:ptr+20])[0]
+            log.debug(f"[D] [{ip}] encryptionMethod: {encryptionMethod:02x} encryptionLevel: {encryptionLevel:02x}")
 
-            server_random = rdp_pkt[ptr+20:ptr+51+1]
+
+            server_random = rdp_pkt[ptr+20:ptr+20+serverRandomLen]
+            serverCertData = rdp_pkt[ptr+20+serverRandomLen:ptr+20+serverRandomLen+serverCertLen]
+            log.debug(f"[D] [{ip}] CertChainVersion: {serverCertData[0]:02x}")
+            #log.debug(f"[D] [{ip}] CertData: {hexlify(serverCertData)}")
+            if serverCertData[0] == 0x02:
+                # TODO: handle X.509 certificates
+                pass
             public_exponent = rdp_pkt[ptr+84:ptr+87+1]
 
             modulus = rdp_pkt[ptr+88:ptr+151+1]
@@ -498,6 +511,7 @@ def rdp_parse_serverdata(pkt, ip):
             log.debug(f"[D] [{ip}] modulus_new #{hexlify(modulus)}")
 
         ptr += header_length
+        log.debug(f"[D] [{ip}] Parsing server data: {ptr}/{len(rdp_pkt)}")
 
     log.debug(f"[D] [{ip}] SERVER_MODULUS: #{hexlify(modulus)}")
     log.debug(f"[D] [{ip}] SERVER_EXPONENT: #{hexlify(public_exponent)}")
@@ -667,6 +681,8 @@ def try_check(sock, rc4enckey, hmackey, rc4deckey, encrypt_flag):
                 if unhexlify("0300000902f0802180") in res:
                     log.debug(f"[D] [{ip}] Received #{hexlify(res)}")
                     return STATUS_VULNERABLE
+        except socket.timeout as ex:
+            pass
         except RdpCommunicationError as ex:
             # we don't care
             pass
