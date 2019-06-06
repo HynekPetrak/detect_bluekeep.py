@@ -124,7 +124,10 @@ def rdp_connect(sock, use_ssl):
     if res[0:2] == b'\x03\x00' and (res[5] & 0xf0) == 0xd0:
         if len(res) < 0xc or res[0xb] == 0x2:
             log.debug(f"[D] [{ip}] RDP connection accepted by the server.")
-            return None
+            if len(res) < 0xc:
+                return "nossl"
+            else:
+                return None
         elif res[0xb] == 0x3:
             log.debug(f"[D] [{ip}] RDP connection rejected by the server.")
             fc = res[0xf]
@@ -688,7 +691,10 @@ def check_rdp_vuln(ip, port, use_ssl = True):
                 log.debug(f"[D] [{ip}] Exception occured during TCP connect: {ex}")
                 return STATUS_NORDP
             status = rdp_connect(sock, use_ssl)
-        if status:
+        if status == "nossl":
+            status = None
+            use_ssl = False
+        elif status:
             return status
     except Exception as ex:
         log.debug(f"[D] [{ip}] Exception occured during RDP connect: {ex}")
