@@ -16,6 +16,10 @@ RC4 taken from https://github.com/DavidBuchanan314/rc4
 
 ## Changelog
 
+## Current version is 0.11 - 7.6.2019
+
+Do not use version 0.9 and 0.10, it is broken, while working on issue #3
+
 ### Added in version 0.6 - 4.5.2019
 
 Fall back to standard RDP security if SSL/TLS is not supported by the server.
