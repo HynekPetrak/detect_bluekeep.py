@@ -23,7 +23,7 @@ from cryptography.hazmat.primitives import hashes
 
 log = logging.getLogger("bluekeep")
 
-VERSION = "0.12"
+VERSION = "0.13"
 
 SEC_ENCRYPT = 0x08
 SEC_INFO_PKT = 0x40
