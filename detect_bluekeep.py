@@ -729,7 +729,7 @@ def check_rdp_vuln(ip, port, use_ssl = True):
             log.debug(f"[D] [{ip}] Exception occured during TCP connect: {ex}")
             return STATUS_NORDP
         status = rdp_connect(sock, use_ssl)
-        if status == "SSL_NOT_ALLOWED_BY_SERVER":
+        if status in ["SSL_NOT_ALLOWED_BY_SERVER", "SSL_CERT_NOT_ON_SERVER"]:
             use_ssl = False
             try:
                 log.debug(f"[D] [{ip}] RDP reconnecting without SSL")
