@@ -16,9 +16,11 @@ RC4 taken from https://github.com/DavidBuchanan314/rc4
 
 ## Changelog
 
-## Current version is 0.11 - 7.6.2019
+## Current version is 0.12 - 7.6.2019
 
-__Do not use version 0.9 and 0.10,__ it is broken, while working on issue #3
+Added handling of x509 certificates. Fixed issue #3
+
+__Do not use version 0.9 and 0.10,__ they are broken, while doing experiments on issue #3
 
 ### Added in version 0.6 - 4.5.2019
 
