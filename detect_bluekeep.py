@@ -16,9 +16,15 @@ import concurrent.futures
 from binascii import unhexlify, hexlify
 from ipaddress import IPv4Network
 
+from OpenSSL.crypto import (load_certificate, dump_privatekey, dump_certificate, X509, X509Name, PKey)
+from OpenSSL.crypto import (TYPE_DSA, TYPE_RSA, FILETYPE_PEM, FILETYPE_ASN1)
+from Crypto.Util.asn1 import (DerSequence, DerObject)
+from datetime import datetime
+import textwrap
+
 log = logging.getLogger("bluekeep")
 
-VERSION = "0.9"
+VERSION = "0.10"
 
 SEC_ENCRYPT = 0x08
 SEC_INFO_PKT = 0x40
@@ -466,6 +472,18 @@ def pdu_client_persistent_key_list():
         "aaaaaaaaaaaaaaaaaa")
     return unhexlify(pkt)
 
+
+def get_modulus_and_exponent(x509):
+    if x509.get_pubkey().type()==TYPE_RSA:
+        pub_der = DerSequence()
+        pub_der.decode(dump_privatekey(FILETYPE_ASN1, x509.get_pubkey()))
+        modulus = int_to_bytestring(pub_der._seq[0])
+        modulus += int_to_bytestring(pub_der._seq[1])
+        exponent = int_to_bytestring(pub_der._seq[2])
+        return ( modulus, exponent )
+    return ''
+
+
 # https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/927de44c-7fe8-4206-a14f-e5517dc24b1c
 
 
@@ -492,30 +510,44 @@ def rdp_parse_serverdata(pkt, ip):
             server_random = rdp_pkt[ptr+20:ptr+20+serverRandomLen]
             serverCertData = rdp_pkt[ptr+20+serverRandomLen:ptr+20+serverRandomLen+serverCertLen]
             log.debug(f"[D] [{ip}] CertChainVersion: {serverCertData[0]:02x}")
-            #log.debug(f"[D] [{ip}] CertData: {hexlify(serverCertData)}")
-            if serverCertData[0] == 0x02:
-                # TODO: handle X.509 certificates
-                pass
-            public_exponent = rdp_pkt[ptr+84:ptr+87+1]
-
-            modulus = rdp_pkt[ptr+88:ptr+151+1]
-            log.debug(f"[D] [{ip}] modulus_old #{hexlify(modulus)}")
-            rsa_magic = rdp_pkt[ptr+68:ptr+71+1]
-            log.debug(f"[D] [{ip}] RSA magic: #{rsa_magic}")
-            if rsa_magic != b"RSA1":
+            log.debug(f"[D] [{ip}] CertData: {hexlify(serverCertData)}")
+            if serverCertData[0] == 0x02: # magic b'0\x82\x01\x15'
+            # WARNING: X.509 certificate handling is currently broken
                 log.debug(f"[D] [{ip}] Server cert isn't RSA, this scenario isn't supported (yet).")
                 raise RdpCommunicationError()
-            bitlen = struct.unpack("<L", rdp_pkt[ptr+72:ptr+75+1])[0] - 8
-            log.debug(f"[D] [{ip}] RSA bitlen: #{bitlen}")
-            modulus = rdp_pkt[ptr+88:ptr+87+bitlen+1]
-            log.debug(f"[D] [{ip}] modulus_new #{hexlify(modulus)}")
+                #with open('cert.txt', 'wb') as f:
+                #    f.write(serverCertData[12:])
+                # TODO: handle X.509 certificates
+                x509 = load_certificate(FILETYPE_ASN1, serverCertData[12:])
+                keytype = x509.get_pubkey().type()
+                if x509.get_pubkey().type()==TYPE_RSA:
+                    modulus, public_exponent = get_modulus_and_exponent(x509)
+                    bitlen = len(modulus)#x509.get_pubkey().bits()
+                    log.debug(f"[D] [{ip}] RSA bitlen: {bitlen}")
+                else:
+                    log.debug(f"[D] [{ip}] Server x509 cert isn't RSA, this scenario isn't supported (yet).")
+                    raise RdpCommunicationError()
+            else:
+                public_exponent = rdp_pkt[ptr+84:ptr+87+1]
+
+                modulus = rdp_pkt[ptr+88:ptr+151+1]
+                log.debug(f"[D] [{ip}] modulus_old {hexlify(modulus)}")
+                rsa_magic = rdp_pkt[ptr+68:ptr+71+1]
+                log.debug(f"[D] [{ip}] RSA magic: {rsa_magic}")
+                if rsa_magic != b"RSA1":
+                    log.debug(f"[D] [{ip}] Server cert isn't RSA, this scenario isn't supported (yet).")
+                    raise RdpCommunicationError()
+                bitlen = struct.unpack("<L", rdp_pkt[ptr+72:ptr+75+1])[0] - 8
+                log.debug(f"[D] [{ip}] RSA bitlen: {bitlen}")
+                modulus = rdp_pkt[ptr+88:ptr+87+bitlen+1]
+                log.debug(f"[D] [{ip}] modulus_new {hexlify(modulus)}")
 
         ptr += header_length
         log.debug(f"[D] [{ip}] Parsing server data: {ptr}/{len(rdp_pkt)}")
 
-    log.debug(f"[D] [{ip}] SERVER_MODULUS: #{hexlify(modulus)}")
-    log.debug(f"[D] [{ip}] SERVER_EXPONENT: #{hexlify(public_exponent)}")
-    log.debug(f"[D] [{ip}] SERVER_RANDOM: #{hexlify(server_random)}")
+    log.debug(f"[D] [{ip}] SERVER_MODULUS: {hexlify(modulus)}")
+    log.debug(f"[D] [{ip}] SERVER_EXPONENT: {hexlify(public_exponent)}")
+    log.debug(f"[D] [{ip}] SERVER_RANDOM: {hexlify(server_random)}")
 
     rsmod = int.from_bytes(modulus, "little")
     rsexp = int.from_bytes(public_exponent, "little")
