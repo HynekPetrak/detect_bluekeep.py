@@ -24,7 +24,7 @@ import textwrap
 
 log = logging.getLogger("bluekeep")
 
-VERSION = "0.10"
+VERSION = "0.11"
 
 SEC_ENCRYPT = 0x08
 SEC_INFO_PKT = 0x40
