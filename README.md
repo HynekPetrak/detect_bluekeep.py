@@ -6,6 +6,23 @@ https://github.com/zerosum0x0/CVE-2019-0708
 
 RC4 taken from https://github.com/DavidBuchanan314/rc4
 
+## Prerequisites
+
+detect_bluekeep.py requires pyasn1 and cryptography python modules.
+
+Install them either via
+
+```
+pip install -r requirements.txt
+```
+
+or
+
+```
+pip3 install pyasn1 pyasn1_modules cryptography
+```
+
+
 ## Return codes
 
 - __SAFE__ - host appears to be not vulnerable
