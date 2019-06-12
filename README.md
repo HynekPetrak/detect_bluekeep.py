@@ -33,7 +33,7 @@ pip3 install pyasn1 pyasn1_modules cryptography
 
 ## Changelog
 
-## Current version is 0.12 - 7.6.2019
+## Current stable version is 0.13
 
 Added handling of x509 certificates. Fixed issue #3
 
